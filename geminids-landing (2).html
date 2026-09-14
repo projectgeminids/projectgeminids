@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Geminids</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@200;300;400&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{width:100%;height:100%;overflow:hidden;background:#fff}
+  body{font-family:'IBM Plex Mono',ui-monospace,'SF Mono',Menlo,monospace;font-weight:200;-webkit-font-smoothing:antialiased;color:#111}
+
+  #stage{position:fixed;inset:0;background:#fff}
+  #scene{position:absolute;inset:0;width:100%;height:100%;display:block}
+
+  .corner{
+    position:fixed;
+    max-width:220px;
+    font-size:12.5px;
+    font-weight:200;
+    line-height:1.65;
+    letter-spacing:.01em;
+    color:#1a1a1a;
+  }
+  .corner .label{
+    font-size:13px;
+    font-weight:300;
+    margin-bottom:8px;
+  }
+
+  .tl{top:32px;left:32px;text-align:left}
+  .tr{top:32px;right:32px;text-align:right}
+  .bl{bottom:32px;left:32px;text-align:left}
+  .br{bottom:32px;right:32px;text-align:right}
+
+  .contact{
+    position:fixed;
+    bottom:32px;
+    left:50%;
+    transform:translateX(-50%);
+    font-size:12px;
+    font-weight:200;
+    letter-spacing:.01em;
+    color:#1a1a1a;
+    text-align:center;
+  }
+  .contact a{color:inherit;text-decoration:none;border-bottom:1px solid rgba(17,17,17,.35)}
+  .contact a:hover{border-bottom-color:#1a1a1a}
+
+  .info-wrap{display:contents}
+
+  @media (max-width:640px){
+    .info-wrap{
+      display:flex;
+      flex-direction:column;
+      position:fixed;
+      left:0;right:0;bottom:0;
+      max-height:44vh;
+      overflow-y:auto;
+      background:rgba(255,255,255,.94);
+      backdrop-filter:blur(3px);
+      -webkit-backdrop-filter:blur(3px);
+      padding:18px 20px 24px;
+      gap:14px;
+      border-top:1px solid rgba(17,17,17,.08);
+    }
+    .corner,.contact{
+      position:static;
+      max-width:none;
+      width:auto;
+      text-align:left;
+      transform:none;
+    }
+    .corner{font-size:12px}
+    .corner .label{font-size:13px}
+    .contact{
+      padding-top:12px;
+      border-top:1px solid rgba(17,17,17,.08);
+      font-size:11px;
+    }
+  }
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="scene"></canvas>
+</div>
+
+<div class="info-wrap">
+<div class="corner tl">
+  <div class="label">GEMINIDS</div>
+  <div>Autonomous meteor astrometry station.</div>
+</div>
+
+<div class="corner tr">
+  <div>Validating the measured radiant and ZHR of the 2026 Geminids against IMO-predicted values.</div>
+</div>
+
+<div class="corner bl">
+  <div>Closed-loop PID pointing, blind plate-solving, real-time frame-difference meteor detection. No commercial GoTo, no external plate-solving service.</div>
+</div>
+
+<div class="corner br">
+  <div>Per-session meteor log, radiant convergence, and measured-vs-predicted ZHR curve — compiled and published without manual intervention.</div>
+</div>
+
+<div class="contact">
+  Questions or collaboration inquiries <a href="mailto:project@geminids.co">project@geminids.co</a>
+</div>
+</div>
+
+<script>
+(function(){
+  'use strict';
+
+  var stage = document.getElementById('stage');
+  var scene = document.getElementById('scene');
+  var ctx = scene.getContext('2d');
+
+  var DPR = Math.min(window.devicePixelRatio || 1, 2);
+  var frame = 0;
+
+  function fit(){
+    var w = window.innerWidth, h = window.innerHeight;
+    DPR = Math.min(window.devicePixelRatio || 1, 2);
+    scene.width = Math.round(w * DPR);
+    scene.height = Math.round(h * DPR);
+    scene.style.width = w + 'px';
+    scene.style.height = h + 'px';
+    ctx.setTransform(DPR,0,0,DPR,0,0);
+  }
+  fit();
+  window.addEventListener('resize', fit);
+
+  var model = [];
+  var count = 150;
+  for(var i=0;i<count;i++){
+    var u = i / count;
+    var band = (i % 3) / 3;
+    model.push({
+      phase: u*Math.PI*2 + band*.55,
+      lane: band,
+      wobble: Math.random()*Math.PI*2,
+      size: .65 + Math.random()*1.65,
+      speed: .55 + Math.random()*.38,
+      orbit: Math.random()*.35,
+      depthBias: Math.random()
+    });
+  }
+
+  var satellites = [];
+  for(var q=0;q<18;q++){
+    satellites.push({
+      phase: Math.random()*Math.PI*2,
+      radius: .92 + Math.random()*.48,
+      tilt: .24 + Math.random()*.28,
+      speed: .18 + Math.random()*.20,
+      size: .65 + Math.random()*1.1
+    });
+  }
+
+  function drawSpinningModel(w,h){
+    ctx.fillStyle='#fff';
+    ctx.fillRect(0,0,w,h);
+
+    var cx=w/2;
+    var cy=h*.49;
+    var base=Math.min(w,h)*.255;
+    var t=frame*.012;
+    var breathe=1 + Math.sin(frame*.011)*.025;
+    var tiltX=Math.sin(frame*.006)*.12;
+    var tiltY=Math.cos(frame*.0045)*.08;
+
+    var glow=ctx.createRadialGradient(cx,cy,base*.05,cx,cy,base*1.7);
+    glow.addColorStop(0,'rgba(0,0,0,.055)');
+    glow.addColorStop(.42,'rgba(0,0,0,.018)');
+    glow.addColorStop(1,'rgba(0,0,0,0)');
+    ctx.fillStyle=glow;
+    ctx.fillRect(0,0,w,h);
+
+    var pts=[];
+    for(var j=0;j<model.length;j++){
+      var p=model[j];
+      var a=p.phase + t*p.speed;
+      var layerRadius=base*(.78 + p.lane*.28);
+      var localBreathe=Math.sin(frame*.014+p.wobble)*base*.025;
+      var rx=(layerRadius+localBreathe)*breathe;
+      var ry=rx*(.47 + p.lane*.035);
+      var rz=.96 + .12*Math.sin(a*2+p.orbit);
+      var x3=Math.cos(a)*rx;
+      var y3=Math.sin(a)*ry;
+      var z3=Math.sin(a);
+
+      x3 += Math.sin(frame*.008+p.wobble)*base*.018;
+      y3 += Math.cos(frame*.007+p.wobble)*base*.012;
+
+      var xx=x3*Math.cos(tiltX)-z3*base*.18*Math.sin(tiltX);
+      var yy=y3*Math.cos(tiltY)-z3*base*.12*Math.sin(tiltY);
+      var depth=(z3+1)/2;
+      pts.push({
+        x:cx+xx,
+        y:cy+yy,
+        z:z3,
+        depth:depth,
+        size:p.size*(.55+depth*.95),
+        alpha:.12+depth*.68
+      });
+    }
+
+    pts.sort(function(a,b){return a.z-b.z;});
+
+    ctx.lineWidth=.65;
+    for(var a1=0;a1<pts.length;a1+=2){
+      var pa=pts[a1];
+      if(pa.depth<.38) continue;
+      var best=null, bestD=Infinity;
+      for(var b1=Math.max(0,a1-12);b1<Math.min(pts.length,a1+13);b1++){
+        if(a1===b1) continue;
+        var pb=pts[b1];
+        if(pb.depth<.42) continue;
+        var dx=pa.x-pb.x, dy=pa.y-pb.y;
+        var d=dx*dx+dy*dy;
+        if(d<bestD && d<base*base*.055){best=pb;bestD=d;}
+      }
+      if(best){
+        ctx.strokeStyle='rgba(0,0,0,'+(0.035+pa.depth*.055).toFixed(3)+')';
+        ctx.beginPath();
+        ctx.moveTo(pa.x,pa.y);
+        ctx.lineTo(best.x,best.y);
+        ctx.stroke();
+      }
+    }
+
+    ctx.save();
+    ctx.translate(cx,cy);
+    ctx.rotate(t*.17);
+    ctx.scale(1,.46);
+    ctx.strokeStyle='rgba(0,0,0,.10)';
+    ctx.lineWidth=.8;
+    ctx.beginPath();ctx.arc(0,0,base*.72,0,Math.PI*2);ctx.stroke();
+    ctx.rotate(Math.PI*.37);
+    ctx.scale(1.18,.72);
+    ctx.strokeStyle='rgba(0,0,0,.055)';
+    ctx.beginPath();ctx.arc(0,0,base*1.08,0,Math.PI*2);ctx.stroke();
+    ctx.restore();
+
+    var pulse=1+Math.sin(frame*.028)*.055;
+    var coreR=2.2*pulse;
+
+    var halo=ctx.createRadialGradient(cx,cy,0,cx,cy,coreR*3.2);
+    halo.addColorStop(0,'rgba(0,0,0,.13)');
+    halo.addColorStop(.42,'rgba(0,0,0,.045)');
+    halo.addColorStop(1,'rgba(0,0,0,0)');
+    ctx.fillStyle=halo;
+    ctx.beginPath();ctx.arc(cx,cy,coreR*3.2,0,Math.PI*2);ctx.fill();
+
+    var lightA=frame*.018;
+    var hx=cx+Math.cos(lightA)*coreR*.42;
+    var hy=cy+Math.sin(lightA)*coreR*.30;
+    var sphere=ctx.createRadialGradient(hx,hy,.15,cx,cy,coreR);
+    sphere.addColorStop(0,'rgba(58,58,58,.95)');
+    sphere.addColorStop(.34,'rgba(8,8,8,.98)');
+    sphere.addColorStop(.78,'rgba(0,0,0,.96)');
+    sphere.addColorStop(1,'rgba(0,0,0,.78)');
+    ctx.fillStyle=sphere;
+    ctx.beginPath();ctx.arc(cx,cy,coreR,0,Math.PI*2);ctx.fill();
+
+    ctx.save();
+    ctx.translate(cx,cy);
+    ctx.rotate(-frame*.014);
+    ctx.strokeStyle='rgba(255,255,255,.18)';
+    ctx.lineWidth=.45;
+    ctx.beginPath();ctx.arc(0,0,coreR*.76,-1.95,-.55);ctx.stroke();
+    ctx.restore();
+
+    for(var z=0;z<satellites.length;z++){
+      var sp=satellites[z];
+      var sa=sp.phase+t*sp.speed;
+      var sr=base*sp.radius;
+      var sx=cx+Math.cos(sa)*sr;
+      var sy=cy+Math.sin(sa)*sr*sp.tilt;
+      var sd=(Math.sin(sa)+1)/2;
+      ctx.fillStyle='rgba(0,0,0,'+(0.08+sd*.26).toFixed(3)+')';
+      ctx.beginPath();ctx.arc(sx,sy,sp.size*(.55+sd*.55),0,Math.PI*2);ctx.fill();
+    }
+
+    for(var k=0;k<pts.length;k++){
+      var pt=pts[k];
+      ctx.fillStyle='rgba(0,0,0,'+pt.alpha.toFixed(3)+')';
+      ctx.beginPath();
+      ctx.arc(pt.x,pt.y,pt.size,0,Math.PI*2);
+      ctx.fill();
+    }
+  }
+
+  function loop(){
+    frame++;
+    var w=window.innerWidth, h=window.innerHeight;
+    drawSpinningModel(w,h);
+    requestAnimationFrame(loop);
+  }
+
+  loop();
+})();
+</script>
+</body>
+</html>
